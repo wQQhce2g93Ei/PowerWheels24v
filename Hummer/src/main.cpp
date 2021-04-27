@@ -16,7 +16,7 @@
 //             Speed 1 Jumper | [ ]2        A3[ ] |
 //             Speed 2 Jumper | [ ]3~       A2[ ] |
 //             Speed 3 Jumper | [ ]4        A1[ ] |
-//                Accelerator | [ ]5~       A0[ ] |
+//                            | [ ]5~       A0[ ] | Accelerator
 //                   NeoPixel | [ ]6~       15[ ] |
 //              MCEnable_R_EN | [ ]7        14[ ] |
 //              MCEnable_L_EN | [ ]8        16[ ] |
@@ -31,7 +31,7 @@
 #define SPEED_1_PIN     2
 #define SPEED_2_PIN     3
 #define SPEED_3_PIN     4
-#define ACCELERATOR_PIN 5
+#define ACCELERATOR_PIN A0
 #define MOTOR_R_EN_PIN  7
 #define MOTOR_L_EN_PIN  8
 #define MOTOR_RPWM_PIN  9
@@ -40,10 +40,16 @@ int speed = 0;
 bool acceleratorActive = false;
 bool acceleratorActivePrev = false;
 
-int startingDutyCycle = 100;
 int currentDutyCycle = 0;
-int targetDutyCycle = 0; // default boot up speed is 0
-int dutyCycleIncrement = 5; // this will be the starting point of our "ramp ups" in Speed 2 and Speed 3
+
+// starting duty cycle after accelerator released
+int startingDutyCycle = 100;
+
+// target power (0-255)
+int targetDutyCycle = 0;
+
+// how fast the ramp up occurs
+int dutyCycleIncrement = 5;
 
 void setup()
 {
