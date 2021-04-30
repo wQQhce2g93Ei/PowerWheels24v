@@ -24,7 +24,7 @@
 //                            +-------------------+
 //
 //                                   NOTES
-// Forked from https://github.com/PatchBOTS/PowerWheels24v, see that for more informationa and context
+// Forked from https://github.com/PatchBOTS/PowerWheels24v, see that for more information and context
 
 #include "Arduino.h"
 
@@ -37,10 +37,12 @@
 #define MOTOR_RPWM_PIN  9
 
 int speed = 0;
+int inactiveAcceleratorCount = 0;
+const int inactiveAcceleratorThreshold = 10;
 bool acceleratorActive = false;
 bool acceleratorActivePrev = false;
 
-int currentDutyCycle = 0;
+int currentDutyCycle = 100;
 
 // starting duty cycle after accelerator released
 int startingDutyCycle = 100;
@@ -58,6 +60,7 @@ void setup()
   pinMode(SPEED_1_PIN, INPUT_PULLUP);
   pinMode(SPEED_2_PIN, INPUT_PULLUP);
   pinMode(SPEED_3_PIN, INPUT_PULLUP);
+  pinMode(ACCELERATOR_PIN, INPUT);
   pinMode(MOTOR_R_EN_PIN, OUTPUT);
   pinMode(MOTOR_L_EN_PIN, OUTPUT);
   pinMode(MOTOR_RPWM_PIN, OUTPUT);
@@ -89,6 +92,20 @@ int getSpeed()
   return speed;
 }
 
+float getAcceleratorVoltage()
+{
+  const int pwmWaitTimeThreshold = 10000;
+  unsigned long time = micros();
+  float acceleratorVoltage = 0;
+  do
+  {
+    int acceleratorValue = analogRead(ACCELERATOR_PIN);
+    acceleratorVoltage = acceleratorValue * (5.0 / 1023.0);
+  } while (acceleratorVoltage < 0.5 && micros() - time < pwmWaitTimeThreshold);
+
+  return acceleratorVoltage;
+}
+
 void loop()
 {
   int speed = getSpeed();
@@ -97,19 +114,19 @@ void loop()
   // using voltage divider with 470 and 100 ohm resistors
   // this should work with 12-24 volts in the 5v operating
   // range of the pro micro
-  int acceleratorValue = analogRead(ACCELERATOR_PIN);
-  float acceleratorVoltage = acceleratorValue * (5.0 / 1023.0);
-  acceleratorActive = acceleratorVoltage > 0.5;
+  float acceleratorVoltage = getAcceleratorVoltage();
+  acceleratorActive = acceleratorVoltage >= 0.5;
   bool resetAcceleration = acceleratorActive && !acceleratorActivePrev;
   acceleratorActivePrev = acceleratorActive;
 
   if (!acceleratorActive)
   {
-    Serial.println("Accelerator Inactive...");
-    currentDutyCycle = 0;
+    // Serial.println("Accelerator Inactive...");
+    currentDutyCycle = startingDutyCycle;
   }
   else
   {
+    inactiveAcceleratorCount = 0;
     if (resetAcceleration)
     {
       currentDutyCycle = startingDutyCycle;
