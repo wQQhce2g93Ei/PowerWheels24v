@@ -13,9 +13,9 @@
 //                            | [ ]RX      GND[ ] | GND
 //                        GND | [ ]GND     RST[ ] |
 //                        GND | [ ]GND     VCC[ ] | MotorControllers
-//             Speed 1 Jumper | [ ]2        A3[ ] |
-//             Speed 2 Jumper | [ ]3~       A2[ ] |
-//             Speed 3 Jumper | [ ]4        A1[ ] |
+//             Speed 1 Jumper | [ ]2        A3[ ] | High Gear
+//             Speed 2 Jumper | [ ]3~       A2[ ] | Low Gear
+//             Speed 3 Jumper | [ ]4        A1[ ] | Reverse Gear
 //                            | [ ]5~       A0[ ] | Accelerator
 //                   NeoPixel | [ ]6~       15[ ] |
 //              MCEnable_R_EN | [ ]7        14[ ] |
@@ -28,13 +28,17 @@
 
 #include "Arduino.h"
 
-#define SPEED_1_PIN     2
-#define SPEED_2_PIN     3
-#define SPEED_3_PIN     4
-#define ACCELERATOR_PIN A0
-#define MOTOR_R_EN_PIN  7
-#define MOTOR_L_EN_PIN  8
-#define MOTOR_RPWM_PIN  9
+#define SPEED_1_PIN       2
+#define SPEED_2_PIN       3
+#define SPEED_3_PIN       4
+#define ACCELERATOR_PIN   A0
+#define GEAR_REVERSE_PIN  A1
+#define GEAR_FWD_LOW_PIN  A2
+#define GEAR_FWD_HIGH_PIN A3
+#define MOTOR_R_EN_PIN    7
+#define MOTOR_L_EN_PIN    8
+#define MOTOR_RPWM_PIN    9
+#define MOTOR_LPWM_PIN    10
 
 int speed = 0;
 int inactiveAcceleratorCount = 0;
@@ -60,7 +64,10 @@ void setup()
   pinMode(SPEED_1_PIN, INPUT_PULLUP);
   pinMode(SPEED_2_PIN, INPUT_PULLUP);
   pinMode(SPEED_3_PIN, INPUT_PULLUP);
-  pinMode(ACCELERATOR_PIN, INPUT);
+  pinMode(ACCELERATOR_PIN, INPUT_PULLUP);
+  pinMode(GEAR_REVERSE_PIN, INPUT_PULLUP);
+  pinMode(GEAR_FWD_LOW_PIN, INPUT_PULLUP);
+  pinMode(GEAR_FWD_HIGH_PIN, INPUT_PULLUP);
   pinMode(MOTOR_R_EN_PIN, OUTPUT);
   pinMode(MOTOR_L_EN_PIN, OUTPUT);
   pinMode(MOTOR_RPWM_PIN, OUTPUT);
@@ -92,41 +99,28 @@ int getSpeed()
   return speed;
 }
 
-float getAcceleratorVoltage()
-{
-  const int pwmWaitTimeThreshold = 10000;
-  unsigned long time = micros();
-  float acceleratorVoltage = 0;
-  do
-  {
-    int acceleratorValue = analogRead(ACCELERATOR_PIN);
-    acceleratorVoltage = acceleratorValue * (5.0 / 1023.0);
-  } while (acceleratorVoltage < 0.5 && micros() - time < pwmWaitTimeThreshold);
-
-  return acceleratorVoltage;
-}
-
 void loop()
 {
   int speed = getSpeed();
 
-  // check to see if accelerator is engaged
-  // using voltage divider with 470 and 100 ohm resistors
-  // this should work with 12-24 volts in the 5v operating
-  // range of the pro micro
-  float acceleratorVoltage = getAcceleratorVoltage();
-  acceleratorActive = acceleratorVoltage >= 0.5;
+  bool reverseGearActive = digitalRead(GEAR_REVERSE_PIN) == 0;
+  bool firstGearActive = digitalRead(GEAR_FWD_LOW_PIN) == 0;
+  bool secondGearActive = digitalRead(GEAR_FWD_HIGH_PIN) == 0;
+
+  // When in reverse, both first gear and reverse gear will be true... correct that
+  firstGearActive = firstGearActive && !reverseGearActive;
+  int gear = reverseGearActive ? -1 : (firstGearActive ? 1 : (secondGearActive ? 2 : 0));
+
+  bool acceleratorActive = gear != 0 && digitalRead(ACCELERATOR_PIN) == 0;
   bool resetAcceleration = acceleratorActive && !acceleratorActivePrev;
   acceleratorActivePrev = acceleratorActive;
 
   if (!acceleratorActive)
   {
-    // Serial.println("Accelerator Inactive...");
-    currentDutyCycle = startingDutyCycle;
+    currentDutyCycle = 0;
   }
   else
   {
-    inactiveAcceleratorCount = 0;
     if (resetAcceleration)
     {
       currentDutyCycle = startingDutyCycle;
@@ -162,16 +156,20 @@ void loop()
       currentDutyCycle = targetDutyCycle;
     }
 
-    Serial.print("Accelerator Voltage: ");
-    Serial.print(acceleratorVoltage);
-    Serial.print(", Speed: ");
+    Serial.print("Speed: ");
     Serial.print(speed);
+    Serial.print(", Gear: ");
+    Serial.print(gear);
     Serial.print(", Accelerating: ");
     Serial.print(acceleratorActive);
     Serial.print(", Duty Cycle: ");
     Serial.println(currentDutyCycle);
   }
 
-  analogWrite(MOTOR_RPWM_PIN, currentDutyCycle);
-  delay(20);
+  analogWrite(reverseGearActive ? MOTOR_RPWM_PIN : MOTOR_LPWM_PIN, 0);
+  delay(10);
+
+  analogWrite(MOTOR_RPWM_PIN, reverseGearActive ? 0 : currentDutyCycle);
+  analogWrite(MOTOR_LPWM_PIN, reverseGearActive ? currentDutyCycle : 0);
+  delay(10);
 }
